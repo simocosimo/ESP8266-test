@@ -15,6 +15,15 @@
 #include <ESP8266WebServer.h>
 #include <EEPROM.h>
 
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+#define N_MEASURE 50
+#define MEASURE_DELAY 1000
+
+// digital pin 2 for the ESP8266
+#define ONE_WIRE_BUS 4
+
 //Variables
 int i = 0;
 int statusCode;
@@ -23,6 +32,9 @@ const char* passphrase = "text";
 String st;
 String content;
 
+//Temperature sensor
+OneWire oneWire(ONE_WIRE_BUS); 
+DallasTemperature sensors(&oneWire);
 
 //Function Decalration
 bool testWifi(void);
@@ -33,8 +45,7 @@ void createWebServer();
 //Establishing Local server at port 80 whenever required
 ESP8266WebServer server(80);
 
-void setup()
-{
+void setup() {
 
   Serial.begin(9600); //Initialising if(DEBUG)Serial Monitor
   Serial.println();
@@ -43,16 +54,18 @@ void setup()
   EEPROM.begin(512); //Initialasing EEPROM
   delay(10);
   pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, LOW);
   Serial.println();
   Serial.println();
   Serial.println("Startup");
+
+  sensors.begin();
 
   //---------------------------------------- Read eeprom for ssid and pass
   Serial.println("Reading EEPROM ssid");
 
   String esid;
-  for (int i = 0; i < 32; ++i)
-  {
+  for (int i = 0; i < 32; ++i) {
     esid += char(EEPROM.read(i));
   }
   Serial.println();
@@ -61,8 +74,7 @@ void setup()
   Serial.println("Reading EEPROM pass");
 
   String epass = "";
-  for (int i = 32; i < 96; ++i)
-  {
+  for (int i = 32; i < 96; ++i) {
     epass += char(EEPROM.read(i));
   }
   Serial.print("PASS: ");
@@ -70,13 +82,10 @@ void setup()
 
 
   WiFi.begin(esid.c_str(), epass.c_str());
-  if (testWifi())
-  {
+  if (testWifi()) {
     Serial.println("Succesfully Connected!!!");
     return;
-  }
-  else
-  {
+  } else {
     Serial.println("Turning the HotSpot On");
     launchWeb();
     setupAP();// Setup HotSpot
@@ -85,8 +94,7 @@ void setup()
   Serial.println();
   Serial.println("Waiting.");
   
-  while ((WiFi.status() != WL_CONNECTED))
-  {
+  while ((WiFi.status() != WL_CONNECTED)) {
     Serial.print(".");
     delay(100);
     server.handleClient();
@@ -95,33 +103,42 @@ void setup()
 }
 
 void loop() {
-  if ((WiFi.status() == WL_CONNECTED))
-  {
+  if ((WiFi.status() == WL_CONNECTED)) {
 
-    for (int i = 0; i < 10; i++)
-    {
-      digitalWrite(LED_BUILTIN, HIGH);
-      delay(1000);
-      digitalWrite(LED_BUILTIN, LOW);
-      delay(1000);
+    // Starting the measurements
+    // TEMPERATURE
+    float avgTemp = 0;
+    for(int i = 0; i < N_MEASURE; i++) {
+      sensors.requestTemperatures();
+      avgTemp += sensors.getTempCByIndex(0);
+      delay(500);
     }
+    avgTemp /= N_MEASURE;
+    Serial.print("Temperature (avg): ");
+    Serial.println(avgTemp);
 
-  }
-  else
-  {
+    // MOISTURE
+
+
+    // LIGHT
+    int light = analogRead(A0);
+    Serial.println("Light measure: ");
+    Serial.println(light);
+
+    delay(MEASURE_DELAY);
+  } else {
+    
   }
 
 }
 
 
 //----------------------------------------------- Fuctions used for WiFi credentials saving and connecting to it which you do not need to change 
-bool testWifi(void)
-{
+bool testWifi(void) {
   int c = 0;
   Serial.println("Waiting for Wifi to connect");
   while ( c < 20 ) {
-    if (WiFi.status() == WL_CONNECTED)
-    {
+    if (WiFi.status() == WL_CONNECTED) {
       return true;
     }
     delay(500);
@@ -133,8 +150,7 @@ bool testWifi(void)
   return false;
 }
 
-void launchWeb()
-{
+void launchWeb() {
   Serial.println("");
   if (WiFi.status() == WL_CONNECTED)
     Serial.println("WiFi connected");
@@ -148,8 +164,7 @@ void launchWeb()
   Serial.println("Server started");
 }
 
-void setupAP(void)
-{
+void setupAP(void) {
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
   delay(100);
@@ -157,12 +172,10 @@ void setupAP(void)
   Serial.println("scan done");
   if (n == 0)
     Serial.println("no networks found");
-  else
-  {
+  else {
     Serial.print(n);
     Serial.println(" networks found");
-    for (int i = 0; i < n; ++i)
-    {
+    for (int i = 0; i < n; ++i) {
       // Print SSID and RSSI for each network found
       Serial.print(i + 1);
       Serial.print(": ");
@@ -176,8 +189,7 @@ void setupAP(void)
   }
   Serial.println("");
   st = "<ol>";
-  for (int i = 0; i < n; ++i)
-  {
+  for (int i = 0; i < n; ++i) {
     // Print SSID and RSSI for each network found
     st += "<li>";
     st += WiFi.SSID(i);
@@ -196,8 +208,7 @@ void setupAP(void)
   Serial.println("over");
 }
 
-void createWebServer()
-{
+void createWebServer() {
  {
     server.on("/", []() {
 
@@ -235,15 +246,13 @@ void createWebServer()
         Serial.println("");
 
         Serial.println("writing eeprom ssid:");
-        for (int i = 0; i < qsid.length(); ++i)
-        {
+        for (int i = 0; i < qsid.length(); ++i) {
           EEPROM.write(i, qsid[i]);
           Serial.print("Wrote: ");
           Serial.println(qsid[i]);
         }
         Serial.println("writing eeprom pass:");
-        for (int i = 0; i < qpass.length(); ++i)
-        {
+        for (int i = 0; i < qpass.length(); ++i) {
           EEPROM.write(32 + i, qpass[i]);
           Serial.print("Wrote: ");
           Serial.println(qpass[i]);
